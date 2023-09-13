@@ -85,9 +85,25 @@ m.options().set_negative_view(NegativeView::Hide);
 assert_eq!(m.to_string(), "$5.25");
 ```
 
+# Valid String Formats
+
+```
+"$5.25"   // positive, symbol visible
+"5.25"    // positive, symbol suppressed
+
+"-$5.25"  // negative, minus, symbol visible
+"-5.25"   // negative, minus, symbol suppressed
+
+"($5.25)" // negative, parenthesis, symbol visible
+"(5.25)"  // negative, parenthesis, symbol visible
+
+// note: the symbol ('$') can be set to any non-digit character
+// note: it is also possible to suppress negative indication
+```
+
 # License
 
-`nmoney` uses the MIT license.
+`nmoney` uses the [MIT](https://github.com/0xMattB/nmoney/blob/main/LICENSE) license.
 
 # Versions
 
