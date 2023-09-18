@@ -1,11 +1,11 @@
 extern crate nmoney;
 
-use nmoney::Money;
+use nmoney::{Money, MoneySign};
 use nmoney::money::options::NegativeView;
 
 fn main() {
 	// to-from string
-	let m = Money::new(12, 99, true).unwrap();
+	let m = Money::new(12, 99, MoneySign::Positive).unwrap();
 	println!("original: {m}");
 
 	let ms = m.to_string();
@@ -21,10 +21,10 @@ fn main() {
 	
 
 	// to-from coin
-	let m = Money::new(109, 85, false).unwrap();
+	let m = Money::new(109, 85, MoneySign::Negative).unwrap();
 	println!("original: {m}");
 	
-	let cents = m.as_cents();
+	let cents = m.as_cents().unwrap();
 	println!("in pennies: {cents}");
 	
 	let cents = cents + 20000;
@@ -35,12 +35,12 @@ fn main() {
 	println!();
 	
 	// copy options
-	let mut m1 = Money::new(59, 99, false).unwrap();
+	let mut m1 = Money::new(59, 99, MoneySign::Negative).unwrap();
 	m1.options().set_symbol('#');
 	m1.options().set_negative_view(NegativeView::Paren);
 	println!("m1: {m1}");
 	
-	let mut m2 = Money::new(1098, 54, false).unwrap();
+	let mut m2 = Money::new(1098, 54, MoneySign::Negative).unwrap();
 	println!("m2 before 'copy_options(): {m2}");
 	
 	Money::copy_options(&mut m2, &m1);

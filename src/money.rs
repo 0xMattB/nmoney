@@ -5,9 +5,12 @@ use std::ops::{Add, AddAssign, Sub, SubAssign, Neg};
 use std::cmp::{PartialEq, Ordering};
 use std::fmt;
 use std::str::FromStr;
+use std::error::Error;
 
 #[derive(Debug, Clone)]
 pub struct MoneyErrorCents;
+
+impl Error for MoneyErrorCents {}
 
 impl fmt::Display for MoneyErrorCents {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -18,17 +21,36 @@ impl fmt::Display for MoneyErrorCents {
 #[derive(Debug, Clone)]
 pub struct MoneyErrorString;
 
+impl Error for MoneyErrorString {}
+
 impl fmt::Display for MoneyErrorString {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "invalid money string")
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct MoneyErrorOverflow;
+
+impl Error for MoneyErrorOverflow {}
+
+impl fmt::Display for MoneyErrorOverflow {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "addition has resulted in overflow")
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum MoneySign {
+	Positive,
+	Negative,
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct Money {
 	dollars: u64,
 	cents: u8,
-	positive: bool,
+	sign: MoneySign,
 	options: Options,
 }
 
@@ -36,24 +58,28 @@ impl Money {
 	/// Creates a new Money instance.
 	///
 	/// `dollars` and `cents` are separate fields, and are absolute values.
-	/// The `positive` field indicates whether the whole value is positive or negative.
+	/// The `sign` field indicates whether the whole value is positive or negative.
 	/// The `options` field allow certain options to be changed.
 	///
 	/// # Example
 	///
 	/// ```
-	/// # use nmoney::Money;
-	/// let m = Money::new(5, 25, true).unwrap();
+	/// # use nmoney::{Money, MoneySign};
+	/// let m = Money::new(5, 25, MoneySign::Positive).unwrap();
 	/// 
 	/// assert_eq!(m.to_string(), "$5.25");
 	/// ```
-	pub fn new(dollars: u64, cents: u8, positive: bool) -> Result<Self, MoneyErrorCents> {
+	pub fn new(dollars: u64, cents: u8, mut sign: MoneySign) -> Result<Self, MoneyErrorCents> {
+		if dollars == 0 && cents == 0 {
+			sign = MoneySign::Positive;  // prevents negative 0.00
+		}
+		
 		if cents < 100 {
 			Ok(
 				Self {
 					dollars,
 					cents,
-					positive: positive || (dollars == 0 && cents == 0),  // prevents negative 0.00
+					sign,
 					options: Options::new(),
 				}
 			)
@@ -72,9 +98,9 @@ impl Money {
 		self.cents
 	}
 	
-	/// Returns the `positive` value of the Money instance.
-	pub fn positive(&self) -> bool {
-		self.positive
+	/// Returns the `sign` value of the Money instance.
+	pub fn sign(&self) -> MoneySign {
+		self.sign
 	}
 	
 	/// Returns a mutable reference to the `options` value, allowing options to be updated.
@@ -86,18 +112,18 @@ impl Money {
 		&self.options
 	}
 	
-	/// Returns the Money instance as the total number of cents.
+	/// Returns the Money instance as the total number of cents, or an error if an overflow has occurred.
 	///
 	/// # Example
 	///
 	/// ```
-	/// # use nmoney::Money;
-	/// let m = Money::new(5, 25, false).unwrap();
-	/// let c = m.as_cents();
+	/// # use nmoney::{Money, MoneySign};
+	/// let m = Money::new(5, 25, MoneySign::Negative).unwrap();
+	/// let c = m.as_cents().unwrap();
 	///
 	/// assert_eq!(c, -525);
 	/// ```
-	pub fn as_cents(&self) -> i64 {
+	pub fn as_cents(&self) -> Result<i64, MoneyErrorOverflow> {
 		convert_money_to_whole(self)
 	}
 	
@@ -106,7 +132,7 @@ impl Money {
 	/// # Example
 	///
 	/// ```
-	/// # use nmoney::Money;
+	/// # use nmoney::{Money, MoneySign};
 	/// let m = Money::from_cents(-525);
 	///
 	/// assert_eq!(m.to_string(), "-$5.25");
@@ -120,25 +146,25 @@ impl Money {
 	/// # Example
 	///
 	/// ```
-	/// # use nmoney::Money;
-	/// let m1 = Money::new(5, 25, true).unwrap();
+	/// # use nmoney::{Money, MoneySign};
+	/// let m1 = Money::new(5, 25, MoneySign::Positive).unwrap();
 	/// let m2 = Money::from_str("5.25").unwrap();
 	///
 	/// assert_eq!(m1, m2);
 	/// ```
 	pub fn from_str(s: &str) -> Result<Self, MoneyErrorString> {
-		let mut is_positive = true;
+		let mut sign = MoneySign::Positive;
 		let mut is_paren = false;
 		let mut symbol = None;
 		let mut r = String::from(s);
 		
 		// check for negative
 		if r.starts_with("-") {
-			is_positive = false;
+			sign = MoneySign::Negative;
 			let _ = r.remove(0);
 		} else if r.starts_with("(") {
 			if r.ends_with(")") {
-				is_positive = false;
+				sign = MoneySign::Negative;
 				is_paren = true;
 				let _ = r.remove(0);
 				let _ = r.pop();
@@ -178,7 +204,7 @@ impl Money {
 			return Err(MoneyErrorString);
 		}
 		
-		let mut m = Money::new(d, c, is_positive).unwrap();
+		let mut m = Money::new(d, c, sign).unwrap();
 		
 		if is_paren {
 			m.options().set_negative_view(NegativeView::Paren);
@@ -198,13 +224,13 @@ impl Money {
 	/// # Example
 	///
 	/// ```
-	/// # use nmoney::Money;
+	/// # use nmoney::{Money, MoneySign};
 	/// # use nmoney::money::options::NegativeView;
-	/// let mut m1 = Money::new(59, 99, false).unwrap();
+	/// let mut m1 = Money::new(59, 99, MoneySign::Negative).unwrap();
 	/// m1.options().set_symbol('#');
 	/// m1.options().set_negative_view(NegativeView::Paren);
 	///
-	/// let mut m2 = Money::new(1098, 54, false).unwrap();
+	/// let mut m2 = Money::new(1098, 54, MoneySign::Negative).unwrap();
 	/// Money::copy_options(&mut m2, &m1);
 	///
 	/// assert_eq!(m2.to_string(), "(#1098.54)");
@@ -214,28 +240,35 @@ impl Money {
 	}
 }
 
-fn convert_money_to_whole(money: &Money) -> i64 {
-	let mut whole = ((money.dollars * 100) + money.cents as u64) as i64;
+fn convert_money_to_whole(money: &Money) -> Result<i64, MoneyErrorOverflow> {
+	let dollars: i64 = (money.dollars * 100) as i64;
+	let cents: i64 = (money.cents) as i64;
 	
-	if !money.positive {
-		whole *= -1;
+	match dollars.checked_add(cents) {
+		Some(mut sum) => {
+			if money.sign == MoneySign::Negative {
+				sum *= -1;
+			}
+			Ok(sum)
+		},
+		None => {
+			Err(MoneyErrorOverflow)
+		},
 	}
-	
-	whole
 }
 
 fn convert_whole_to_money(mut whole: i64) -> Money {
-	let mut positive = true;
+	let mut sign = MoneySign::Positive;
 	
 	if whole < 0 {
-		positive = false;
+		sign = MoneySign::Negative;
 		whole *= -1;
 	}
 	
 	Money {
 		dollars: (whole / 100) as u64,
 		cents: (whole % 100) as u8,
-		positive,
+		sign,
 		options: Options::new()
 	}
 }
@@ -245,7 +278,7 @@ impl Default for Money {
 		Self {
 			dollars: 0,
 			cents: 0,
-			positive: true,
+			sign: MoneySign::Positive,
 			options: Options::new(),
 		}
 	}
@@ -255,11 +288,17 @@ impl Add for Money {
 	type Output = Self;
 	
 	fn add(self, other: Self) -> Self {
-		let whole_1 = convert_money_to_whole(&self);
-		let whole_2 = convert_money_to_whole(&other);
-		let whole_sum = whole_1 + whole_2;
+		let whole_1 = convert_money_to_whole(&self).expect("overflow on addition");
+		let whole_2 = convert_money_to_whole(&other).expect("overflow on addition");
 		
-		convert_whole_to_money(whole_sum)
+		match whole_1.checked_add(whole_2) {
+			Some(sum) => {
+				convert_whole_to_money(sum)
+			},
+			None => {
+				panic!("overflow on addition");
+			},
+		}
 	}
 }
 
@@ -273,11 +312,17 @@ impl Sub for Money {
 	type Output = Self;
 	
 	fn sub(self, other: Self) -> Self {
-		let whole_1 = convert_money_to_whole(&self);
-		let whole_2 = convert_money_to_whole(&other);
-		let whole_sum = whole_1 - whole_2;
+		let whole_1 = convert_money_to_whole(&self).expect("overflow on subtraction");
+		let whole_2 = convert_money_to_whole(&other).expect("overflow on subtraction");
 		
-		convert_whole_to_money(whole_sum)
+		match whole_1.checked_sub(whole_2) {
+			Some(difference) => {
+				convert_whole_to_money(difference)
+			},
+			None => {
+				panic!("underflow on subtraction");
+			},
+		}
 	}
 }
 
@@ -291,10 +336,16 @@ impl Neg for Money {
 	type Output = Self;
 	
 	fn neg(self) -> Self {
+		let sign = if self.sign == MoneySign::Positive {
+			MoneySign::Negative
+		} else {
+			MoneySign::Positive
+		};
+		
 		Self {
 			dollars: self.dollars,
 			cents: self.cents,
-			positive: !self.positive,
+			sign,
 			options: self.options,
 		}
 	}
@@ -304,14 +355,14 @@ impl PartialEq for Money {
 	fn eq(&self, other: &Self) -> bool {
 		self.dollars == other.dollars &&
 		self.cents == other.cents &&
-		self.positive == other.positive
+		self.sign == other.sign
 	}
 }
 
 impl PartialOrd for Money {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let m1 = self.as_cents();
-		let m2 = other.as_cents();
+        let m1 = self.as_cents().unwrap();
+		let m2 = other.as_cents().unwrap();
 		
 		if m1 < m2 {
 			Some(Ordering::Less)
@@ -331,7 +382,7 @@ impl fmt::Display for Money {
 			s.insert(0, self.options_immutable().symbol());
 		}
 		
-		if self.positive() == false {
+		if self.sign() == MoneySign::Negative {
 			/* 'NegativeView::Hide' simply omits the logic to add the negative indicator */
 			if self.options_immutable().negative_view() == NegativeView::Minus {
 				s.insert(0, '-');
@@ -366,143 +417,143 @@ mod tests {
 	
 	#[test]
 	fn positive_plus_positive() {
-		let m1 = Money::new( 4, 56, true).unwrap();
-		let m2 = Money::new(12, 49, true).unwrap();
+		let m1 = Money::new( 4, 56, MoneySign::Positive).unwrap();
+		let m2 = Money::new(12, 49, MoneySign::Positive).unwrap();
 		
 		assert_eq!(
 			m1 + m2,
-			Money { dollars: 17, cents: 5, positive: true, options: Options::new() }
+			Money { dollars: 17, cents: 5, sign: MoneySign::Positive, options: Options::new() }
 		);
 	}
 	
 	#[test]
 	fn positive_plus_negative() {
-		let m1 = Money::new( 4, 56, true).unwrap();
-		let m2 = Money::new(12, 49, false).unwrap();
+		let m1 = Money::new( 4, 56, MoneySign::Positive).unwrap();
+		let m2 = Money::new(12, 49, MoneySign::Negative).unwrap();
 		
 		assert_eq!(
 			m1 + m2,
-			Money { dollars: 7, cents: 93, positive: false, options: Options::new() }
+			Money { dollars: 7, cents: 93, sign: MoneySign::Negative, options: Options::new() }
 		);
 	}
 	
 	#[test]
 	fn negative_plus_positive() {
-		let m1 = Money::new( 4, 56, false).unwrap();
-		let m2 = Money::new(12, 49, true).unwrap();
+		let m1 = Money::new( 4, 56, MoneySign::Negative).unwrap();
+		let m2 = Money::new(12, 49, MoneySign::Positive).unwrap();
 		
 		assert_eq!(
 			m1 + m2,
-			Money { dollars: 7, cents: 93, positive: true, options: Options::new() }
+			Money { dollars: 7, cents: 93, sign: MoneySign::Positive, options: Options::new() }
 		);
 	}
 	
 	#[test]
 	fn negative_plus_negative() {
-		let m1 = Money::new( 4, 56, false).unwrap();
-		let m2 = Money::new(12, 49, false).unwrap();
+		let m1 = Money::new( 4, 56, MoneySign::Negative).unwrap();
+		let m2 = Money::new(12, 49, MoneySign::Negative).unwrap();
 		
 		assert_eq!(
 			m1 + m2,
-			Money { dollars: 17, cents: 5, positive: false, options: Options::new() }
+			Money { dollars: 17, cents: 5, sign: MoneySign::Negative, options: Options::new() }
 		);
 	}
 	
 	#[test]
 	fn positive_minus_positive() {
-		let m1 = Money::new( 4, 56, true).unwrap();
-		let m2 = Money::new(12, 49, true).unwrap();
+		let m1 = Money::new( 4, 56, MoneySign::Positive).unwrap();
+		let m2 = Money::new(12, 49, MoneySign::Positive).unwrap();
 		
 		assert_eq!(
 			m1 - m2,
-			Money { dollars: 7, cents: 93, positive: false, options: Options::new() }
+			Money { dollars: 7, cents: 93, sign: MoneySign::Negative, options: Options::new() }
 		);
 	}
 	
 	#[test]
 	fn positive_minus_negative() {
-		let m1 = Money::new( 4, 56, true).unwrap();
-		let m2 = Money::new(12, 49, false).unwrap();
+		let m1 = Money::new( 4, 56, MoneySign::Positive).unwrap();
+		let m2 = Money::new(12, 49, MoneySign::Negative).unwrap();
 		
 		assert_eq!(
 			m1 - m2,
-			Money { dollars: 17, cents: 5, positive: true, options: Options::new() }
+			Money { dollars: 17, cents: 5, sign: MoneySign::Positive, options: Options::new() }
 		);
 	}
 	
 	#[test]
 	fn negative_minus_positive() {
-		let m1 = Money::new( 4, 56, false).unwrap();
-		let m2 = Money::new(12, 49, true).unwrap();
+		let m1 = Money::new( 4, 56, MoneySign::Negative).unwrap();
+		let m2 = Money::new(12, 49, MoneySign::Positive).unwrap();
 		
 		assert_eq!(
 			m1 - m2,
-			Money { dollars: 17, cents: 5, positive: false, options: Options::new() }
+			Money { dollars: 17, cents: 5, sign: MoneySign::Negative, options: Options::new() }
 		);
 	}
 	
 	#[test]
 	fn negative_minus_negative() {
-		let m1 = Money::new( 4, 56, false).unwrap();
-		let m2 = Money::new(12, 49, false).unwrap();
+		let m1 = Money::new( 4, 56, MoneySign::Negative).unwrap();
+		let m2 = Money::new(12, 49, MoneySign::Negative).unwrap();
 		
 		assert_eq!(
 			m1 - m2,
-			Money { dollars: 7, cents: 93, positive: true, options: Options::new() }
+			Money { dollars: 7, cents: 93, sign: MoneySign::Positive, options: Options::new() }
 		);
 	}
 
 	#[test]
 	fn negate() {
-		let m = Money::new(15, 30, true).unwrap();
+		let m = Money::new(15, 30, MoneySign::Positive).unwrap();
 		let m2 = -m;
 		
 		assert_eq!(
 			m2,
-			Money { dollars: 15, cents: 30, positive: false, options: Options::new() }
+			Money { dollars: 15, cents: 30, sign: MoneySign::Negative, options: Options::new() }
 		);
 	}
 	
 	#[test]
 	fn as_cents() {
-		let m = Money::new(15, 30, false).unwrap();
+		let m = Money::new(15, 30, MoneySign::Negative).unwrap();
 		
 		assert_eq!(
-			m.as_cents(),
+			m.as_cents().unwrap(),
 			-1530
 		);
 	}
 	
 	#[test]
 	fn add_assign() {
-		let m1 = Money::new( 4, 56, true).unwrap();
-		let mut m2 = Money::new(12, 49, true).unwrap();
+		let m1 = Money::new( 4, 56, MoneySign::Positive).unwrap();
+		let mut m2 = Money::new(12, 49, MoneySign::Positive).unwrap();
 		
 		m2 += m1;
 		
 		assert_eq!(
 			m2,
-			Money { dollars: 17, cents: 5, positive: true, options: Options::new() }
+			Money { dollars: 17, cents: 5, sign: MoneySign::Positive, options: Options::new() }
 		);
 	}
 	
 	#[test]
 	fn sub_assign() {
-		let m1 = Money::new( 4, 56, true).unwrap();
-		let mut m2 = Money::new(12, 49, true).unwrap();
+		let m1 = Money::new( 4, 56, MoneySign::Positive).unwrap();
+		let mut m2 = Money::new(12, 49, MoneySign::Positive).unwrap();
 		
 		m2 -= m1;
 		
 		assert_eq!(
 			m2,
-			Money { dollars: 7, cents: 93, positive: true, options: Options::new() }
+			Money { dollars: 7, cents: 93, sign: MoneySign::Positive, options: Options::new() }
 		);
 	}
 	
 	#[test]
 	fn less_than() {
-		let m1 = Money::new( 4, 56, true).unwrap();
-		let m2 = Money::new(12, 49, true).unwrap();
+		let m1 = Money::new( 4, 56, MoneySign::Positive).unwrap();
+		let m2 = Money::new(12, 49, MoneySign::Positive).unwrap();
 		
 		let e1 = m1 < m2;
 		let e2 = m1 > m2;
@@ -512,8 +563,8 @@ mod tests {
 	
 	#[test]
 	fn less_than_or_equal() {
-		let m1 = Money::new(12, 49, true).unwrap();
-		let m2 = Money::new(12, 49, true).unwrap();
+		let m1 = Money::new(12, 49, MoneySign::Positive).unwrap();
+		let m2 = Money::new(12, 49, MoneySign::Positive).unwrap();
 		
 		let e1 = m1 <= m2;
 		let e2 = m1 >= m2;
@@ -523,8 +574,8 @@ mod tests {
 	
 	#[test]
 	fn greater_than() {
-		let m1 = Money::new( 4, 56, true).unwrap();
-		let m2 = Money::new(12, 49, true).unwrap();
+		let m1 = Money::new( 4, 56, MoneySign::Positive).unwrap();
+		let m2 = Money::new(12, 49, MoneySign::Positive).unwrap();
 		
 		let e1 = m2 > m1;
 		let e2 = m2 < m1;
@@ -534,8 +585,8 @@ mod tests {
 	
 	#[test]
 	fn greater_than_or_equal() {
-		let m1 = Money::new(12, 50, true).unwrap();
-		let m2 = Money::new(12, 49, true).unwrap();
+		let m1 = Money::new(12, 50, MoneySign::Positive).unwrap();
+		let m2 = Money::new(12, 49, MoneySign::Positive).unwrap();
 		
 		let e1 = m1 >= m2;
 		let e2 = m1 <= m2;
@@ -545,22 +596,22 @@ mod tests {
 	
 	#[test]
 	fn equal_to() {
-		let m1 = Money::new(12, 49, true).unwrap();
-		let m2 = Money::new(12, 49, true).unwrap();
+		let m1 = Money::new(12, 49, MoneySign::Positive).unwrap();
+		let m2 = Money::new(12, 49, MoneySign::Positive).unwrap();
 		
 		assert!(m1 == m2);
 	}
 	
 	#[test]
 	fn to_string_default() {
-		let m = Money::new(12, 29, true).unwrap();
+		let m = Money::new(12, 29, MoneySign::Positive).unwrap();
 		
 		assert_eq!(m.to_string(), "$12.29");
 	}
 	
 	#[test]
 	fn to_string_new_symbol() {
-		let mut m = Money::new(12, 29, true).unwrap();
+		let mut m = Money::new(12, 29, MoneySign::Positive).unwrap();
 		m.options.set_symbol('#');
 		
 		assert_eq!(m.to_string(), "#12.29");
@@ -568,14 +619,14 @@ mod tests {
 	
 	#[test]
 	fn to_string_neg_minus() {
-		let m = Money::new(12, 29, false).unwrap();
+		let m = Money::new(12, 29, MoneySign::Negative).unwrap();
 		
 		assert_eq!(m.to_string(), "-$12.29");
 	}
 	
 	#[test]
 	fn to_string_neg_paren() {
-		let mut m = Money::new(12, 29, false).unwrap();
+		let mut m = Money::new(12, 29, MoneySign::Negative).unwrap();
 		m.options.set_negative_view(NegativeView::Paren);
 		
 		assert_eq!(m.to_string(), "($12.29)");
@@ -583,7 +634,7 @@ mod tests {
 	
 	#[test]
 	fn to_string_neg_hide() {
-		let mut m = Money::new(12, 29, false).unwrap();
+		let mut m = Money::new(12, 29, MoneySign::Negative).unwrap();
 		m.options.set_negative_view(NegativeView::Hide);
 		
 		assert_eq!(m.to_string(), "$12.29");
@@ -591,28 +642,28 @@ mod tests {
 	
 	#[test]
 	fn from_cents() {
-		let m = Money::new(5, 76, true).unwrap();
+		let m = Money::new(5, 76, MoneySign::Positive).unwrap();
 		
 		assert_eq!(m, Money::from_cents(576));
 	}
 	
 	#[test]
 	fn set_symbol_valid() {
-		let mut m = Money::new(5, 76, true).unwrap();
+		let mut m = Money::new(5, 76, MoneySign::Positive).unwrap();
 		
 		assert!(m.options().set_symbol('#'));
 	}
 	
 	#[test]
 	fn set_symbol_invalid() {
-		let mut m = Money::new(5, 76, true).unwrap();
+		let mut m = Money::new(5, 76, MoneySign::Positive).unwrap();
 		
 		assert!(!m.options().set_symbol('1'));
 	}
 	
 	#[test]
 	fn from_str_pos_no_symbol() {
-		let m1 = Money::new(5, 34, true).unwrap();
+		let m1 = Money::new(5, 34, MoneySign::Positive).unwrap();
 		let m2 = Money::from_str("5.34").unwrap();
 		
 		assert!(
@@ -624,7 +675,7 @@ mod tests {
 	
 	#[test]
 	fn from_str_pos_symbol() {
-		let m1 = Money::new(5, 34, true).unwrap();
+		let m1 = Money::new(5, 34, MoneySign::Positive).unwrap();
 		let m2 = Money::from_str("$5.34").unwrap();
 		
 		assert!(
@@ -636,7 +687,7 @@ mod tests {
 	
 	#[test]
 	fn from_str_minus_no_symbol() {
-		let m1 = Money::new(5, 34, false).unwrap();
+		let m1 = Money::new(5, 34, MoneySign::Negative).unwrap();
 		let m2 = Money::from_str("-5.34").unwrap();
 		
 		assert!(
@@ -649,7 +700,7 @@ mod tests {
 	
 	#[test]
 	fn from_str_minus_symbol() {
-		let m1 = Money::new(5, 34, false).unwrap();
+		let m1 = Money::new(5, 34, MoneySign::Negative).unwrap();
 		let m2 = Money::from_str("-$5.34").unwrap();
 		
 		assert!(
@@ -662,7 +713,7 @@ mod tests {
 
 	#[test]
 	fn from_str_paren_no_symbol() {
-		let m1 = Money::new(5, 34, false).unwrap();
+		let m1 = Money::new(5, 34, MoneySign::Negative).unwrap();
 		let m2 = Money::from_str("(5.34)").unwrap();
 		
 		assert!(
@@ -675,7 +726,7 @@ mod tests {
 	
 	#[test]
 	fn from_str_paren_symbol() {
-		let m1 = Money::new(5, 34, false).unwrap();
+		let m1 = Money::new(5, 34, MoneySign::Negative).unwrap();
 		let m2 = Money::from_str("($5.34)").unwrap();
 		
 		assert!(
@@ -688,7 +739,7 @@ mod tests {
 
 	#[test]
 	fn from_str_pos_diff_symbol() {
-		let m1 = Money::new(5, 34, true).unwrap();
+		let m1 = Money::new(5, 34, MoneySign::Positive).unwrap();
 		let m2 = Money::from_str("£5.34").unwrap();
 		
 		assert!(
@@ -700,7 +751,7 @@ mod tests {
 	
 	#[test]
 	fn invalid_money_cents() {
-		match Money::new(5, 101, true) {
+		match Money::new(5, 101, MoneySign::Positive) {
 			Ok(_) => { assert!(false); },
 			Err(_) => { assert!(true); },
 		}
@@ -716,8 +767,8 @@ mod tests {
 	
 	#[test]
 	fn copy_options() {
-		let mut src = Money::new(5, 25, false).unwrap();
-		let mut dest = Money::new(10, 50, false).unwrap();
+		let mut src = Money::new(5, 25, MoneySign::Negative).unwrap();
+		let mut dest = Money::new(10, 50, MoneySign::Negative).unwrap();
 		
 		src.options().set_symbol('#');
 		src.options().set_negative_view(NegativeView::Paren);

@@ -1,7 +1,13 @@
 [package]
 name = "nmoney"
-version = "0.0.0"
+version = "1.0.0"
 edition = "2021"
+authors = ["Matthew Bentivegna"]
+description = "Simple money representation"
+repository = "https://github.com/0xMattB/nmoney"
+readme = "README.md"
+license = "MIT"
+keywords = ["money"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -50,8 +50,8 @@ impl Options {
 	/// Example
 	///
 	/// ```
-	/// # use nmoney::Money;
-	/// let mut m = Money::new(5, 25, true).unwrap();
+	/// # use nmoney::{Money, MoneySign};
+	/// let mut m = Money::new(5, 25, MoneySign::Positive).unwrap();
 	/// m.options().set_symbol('£');
 	///
 	/// assert_eq!(m.to_string(), "£5.25");
@@ -71,8 +71,8 @@ impl Options {
 	/// Example
 	///
 	/// ```
-	/// # use nmoney::Money;
-	/// let mut m = Money::new(5, 25, true).unwrap();
+	/// # use nmoney::{Money, MoneySign};
+	/// let mut m = Money::new(5, 25, MoneySign::Positive).unwrap();
 	/// m.options().set_show_symbol(false);
 	///
 	/// assert_eq!(m.to_string(), "5.25");
@@ -87,18 +87,18 @@ impl Options {
 	/// Examples
 	///
 	/// ```
-	/// # use nmoney::Money;
+	/// # use nmoney::{Money, MoneySign};
 	/// # use nmoney::money::options::NegativeView;
-	/// let mut m = Money::new(5, 25, false).unwrap();
+	/// let mut m = Money::new(5, 25, MoneySign::Negative).unwrap();
 	/// m.options().set_negative_view(NegativeView::Paren);
 	///
 	/// assert_eq!(m.to_string(), "($5.25)");
 	/// ```
 	///
 	/// ```
-	/// # use nmoney::Money;
+	/// # use nmoney::{Money, MoneySign};
 	/// # use nmoney::money::options::NegativeView;
-	/// let mut m = Money::new(5, 25, false).unwrap();
+	/// let mut m = Money::new(5, 25, MoneySign::Negative).unwrap();
 	/// m.options().set_negative_view(NegativeView::Hide);
 	///
 	/// assert_eq!(m.to_string(), "$5.25");

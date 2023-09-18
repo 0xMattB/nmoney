@@ -1,10 +1,10 @@
 extern crate nmoney;
 
-use nmoney::Money;
+use nmoney::{Money, MoneySign};
 use nmoney::money::options::NegativeView;
 
 fn main() {
-	let mut m = Money::new(10, 25, true).unwrap();
+	let mut m = Money::new(10, 25, MoneySign::Positive).unwrap();
 
 	println!("Default    : {m}");
 	
