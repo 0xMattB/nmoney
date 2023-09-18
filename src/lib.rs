@@ -2,5 +2,5 @@
 
 pub mod money;
 
-pub use money::{Money, MoneyErrorCents, MoneyErrorString};
+pub use money::{Money, MoneySign, MoneyErrorCents, MoneyErrorString, MoneyErrorOverflow};
 pub use money::options::NegativeView;

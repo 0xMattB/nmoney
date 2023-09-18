@@ -1,10 +1,10 @@
 extern crate nmoney;
 
-use nmoney::Money;
+use nmoney::{Money, MoneySign};
 
 fn main() {
-	let m1 = Money::new(10, 25, true).unwrap();
-	let m2 = Money::new(21, 33, true).unwrap();
+	let m1 = Money::new(10, 25, MoneySign::Positive).unwrap();
+	let m2 = Money::new(21, 33, MoneySign::Positive).unwrap();
 	
 	// testing '+' operator
 	let sum = m1 + m2;
