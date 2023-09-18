@@ -100,5 +100,10 @@ Panics can occur on addition overflow or subtraction underflow for:
 
 # Versions
 
+* 1.0.0
+    * Improved negation logic
+    * Used 'checked_add/sub' traits to monitor for overflow
+    * Changed 'positive' in Money type from boolean to enum
+    * Implemented 'Error' trait on error types in money.rs
 * 0.0.0
     * Initial development.
